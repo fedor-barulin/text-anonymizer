@@ -1,0 +1,97 @@
+{
+  "_comment": "Template. Replace every value with the user's approved mapping. 'protect' fragments are masked before replacement and restored afterwards, so ordinary words sharing a brand root survive. 'expected_forms' lists legitimate inflections of the targets so the artifact checker does not flag correct grammar. Pairs are applied longest-first automatically; write specific multi-word phrases anyway.",
+  "target_locale": "Singapore",
+  "mode": "substitute",
+  "protect": [
+    "мотиваци",
+    "лейтмотив",
+    "по мотивам",
+    "мотиватор",
+    "motive",
+    "ромашковый чай",
+    "ромашка аптечная"
+  ],
+  "expected_forms": [
+    "Сингапур",
+    "Сингапура",
+    "Сингапуре",
+    "Сингапуром",
+    "Сингапуру",
+    "сингапурский",
+    "Globex",
+    "Globex Telecom",
+    "Globex Pay"
+  ],
+  "pairs": [
+    {
+      "from": "ООО «Ромашка» (Romashka Telecom)",
+      "to": "Globex Telecom",
+      "note": "legal entity + brand, longest form first"
+    },
+    {
+      "from": "Ромашка.Pay",
+      "to": "Globex Pay",
+      "note": "product sub-brand"
+    },
+    {
+      "from": "romashka-telecom.example",
+      "to": "globex.example",
+      "note": "domain; email follows from it"
+    },
+    {
+      "from": "банк «Заречье»",
+      "to": "Merlion Bank",
+      "note": "partner bank - a real counterpart needs user approval"
+    },
+    {
+      "from": "Зареченская область",
+      "to": "Сингапур",
+      "note": "region -> city-state, not 'Сингапурская область'"
+    },
+    {
+      "from": "Зареченском",
+      "to": "Сингапуром",
+      "note": "instrumental"
+    },
+    {
+      "from": "Зареченска",
+      "to": "Сингапура",
+      "note": "genitive"
+    },
+    {
+      "from": "Зареченску",
+      "to": "Сингапуру",
+      "note": "dative"
+    },
+    {
+      "from": "Зареченске",
+      "to": "Сингапуре",
+      "note": "prepositional"
+    },
+    {
+      "from": "Зареченск",
+      "to": "Сингапур",
+      "note": "nominative/accusative"
+    },
+    {
+      "from": "зареченчанин",
+      "to": "сингапурец",
+      "note": "demonym"
+    },
+    {
+      "from": "зареченский",
+      "to": "сингапурский",
+      "note": "adjective"
+    },
+    {
+      "from": "@zarechensk_news",
+      "to": "@sg_news",
+      "note": "handle: change together with the display name or leave both"
+    },
+    {
+      "from": "Ромашка",
+      "to": "Globex",
+      "note": "bare brand, applied last; homonyms are protected above"
+    }
+  ]
+}

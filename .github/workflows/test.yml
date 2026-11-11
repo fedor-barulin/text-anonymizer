@@ -1,0 +1,35 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  fixture:
+    name: fixture (${{ matrix.os }}, py${{ matrix.python-version }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run fixture self-test
+        run: python tests/run_fixture_test.py
+
+      - name: Check no bytecode caches are committed
+        shell: bash
+        run: |
+          if find . -name '__pycache__' -o -name '*.pyc' | grep -q .; then
+            echo "bytecode caches found in the working tree"
+            find . -name '__pycache__' -o -name '*.pyc'
+            exit 1
+          fi

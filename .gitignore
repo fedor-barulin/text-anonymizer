@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editors / IDE
+.idea/
+.vscode/
+*.swp
+.qoder/settings.local.json
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+__MACOSX/
+
+# Local working data - never commit anonymization keys
+mapping.json
+mapping.local.json
+inventory.json
+verify.json
+apply-report.json
+allow.txt
+backup-anon/
+*-workspace/

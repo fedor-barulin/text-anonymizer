@@ -1,0 +1,26 @@
+{
+  "name": "text-anonymizer",
+  "displayName": "Text Anonymizer",
+  "version": "0.1.0",
+  "description": "Depersonalize text by swapping locale-bound references (employer, city, region, domains, banks, handles) to another country, or neutralizing them, with inflection-aware replacement and leak verification.",
+  "author": {
+    "name": "Fedor Barulin"
+  },
+  "logo": "./assets/avatar.svg",
+  "keywords": [
+    "qoder-plugin",
+    "skill",
+    "anonymization",
+    "privacy",
+    "redaction",
+    "localization",
+    "claude-code"
+  ],
+  "category": "developer-tools",
+  "tags": [
+    "skill",
+    "privacy",
+    "text"
+  ],
+  "skills": "./skills/"
+}
