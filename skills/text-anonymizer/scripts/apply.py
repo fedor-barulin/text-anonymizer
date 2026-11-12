@@ -99,6 +99,8 @@ def main():
     ap.add_argument("--exclude", help="comma-separated directory names to skip")
     ap.add_argument("--include-hidden", action="store_true")
     ap.add_argument("--report", help="write a JSON report here")
+    ap.add_argument("--emit-key", help="write a round-trip key here so restore.py can reverse the job "
+                                       "(the key re-identifies the text: keep it local, never in a prompt)")
     args = ap.parse_args()
 
     try:
@@ -161,7 +163,11 @@ def main():
                 os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
                 shutil.copy2(path, dest)
                 backups += 1
+            if args.emit_key:
+                entry["sha256_before"] = common.sha256_file(path)
             common.write_text(path, new_text, enc)
+            if args.emit_key:
+                entry["sha256_after"] = common.sha256_file(path)
 
         entry["artifacts"] = found
         changed.append(entry)
@@ -182,6 +188,22 @@ def main():
         "skipped": skipped,
     }
     common.dump_json(args.report, report)
+
+    if args.emit_key and not args.dry_run:
+        documents = [{"path": e["path"],
+                      "sha256_before": e.get("sha256_before"),
+                      "sha256_after": e.get("sha256_after")} for e in changed]
+        key = common.build_key(mapping, documents)
+        common.dump_json(args.emit_key, key)
+        print("\nround-trip key: %s" % args.emit_key)
+        print("It maps every replacement back to the original. Keep it local and out of git,")
+        print("and never paste it into a prompt - it fully re-identifies the text.")
+        if key["ambiguous"]:
+            print("Ambiguous targets (restore.py will leave these untouched until you decide):")
+            for t, srcs in key["ambiguous"].items():
+                print("   %s  <-  %s" % (t, " | ".join(srcs)))
+    elif args.emit_key and args.dry_run:
+        print("\n--emit-key skipped in dry run: nothing was written, so there is nothing to key")
 
     print("%s: %d/%d files changed, %d replacements"
           % ("DRY RUN" if args.dry_run else "APPLIED", len(changed), len(files), sum(pair_totals.values())))

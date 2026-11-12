@@ -1,6 +1,6 @@
 ---
 name: text-anonymizer
-description: Depersonalizes prose and documents by replacing locale-bound references (employer, legal entity, city, region, districts, domains, email, partner banks, local brands, channel names and handles) with equivalents from another country, or by neutralizing them into generic wording. Use whenever the user wants to anonymize, depersonalize, de-identify, relocalize or "singapurize" text, remove ties to a city, region or employer, publish a case study without naming their company, swap the locale in a resume, post, article, chat export or agent memory file, or asks "find every mention of X in my project". Always ask what is being anonymized and which target country to use; never assume a default locale. Handles Russian inflection and homonym collisions, hunts invisible local ties, and verifies that no originals survive.
+description: Depersonalizes prose and documents by replacing locale-bound references (employer, legal entity, city, region, districts, domains, email, partner banks, local brands, channel names and handles) with equivalents from another country, or by neutralizing them into generic wording. Use whenever the user wants to anonymize, depersonalize, de-identify, relocalize or "singapurize" text, remove ties to a city, region or employer, publish a case study without naming their company, swap the locale in a resume, post, article, chat export or agent memory file, or asks "find every mention of X in my project". Always ask what is being anonymized and which target country to use; never assume a default locale. Handles Russian inflection and homonym collisions, hunts invisible local ties, and verifies that no originals survive. Also reverses the job: use when the user wants to restore, un-anonymize, de-anonymize or put back the original names in a model's output after working on anonymized text («вернуть обратно», «восстановить исходные названия», «отсингапурить в обратную сторону»), keeping the re-identification key local.
 ---
 
 # Text Anonymizer
@@ -12,7 +12,8 @@ produces broken grammar, mangled unrelated words, and a false sense of safety, b
 the strongest identifiers are usually the ones nobody thought to search for.
 
 This skill runs the job as a pipeline: **intake → inventory → mapping → approval →
-apply → language pass → verify → cleanup**. Each stage exists because skipping it
+apply → language pass → verify → cleanup**, plus an optional **restore** pass that
+puts the originals back into a model's output. Each stage exists because skipping it
 has a specific, predictable failure mode.
 
 ## Two modes
@@ -131,6 +132,14 @@ python scripts/apply.py --mapping mapping.json <paths> --dry-run
 python scripts/apply.py --mapping mapping.json <paths> --backup-dir work/backup-anon
 ```
 
+If the user plans to restore the originals later (the usual reason to anonymize before
+sending text to a model), emit the round-trip key in the same run:
+
+```bash
+python scripts/apply.py --mapping mapping.json <paths> \
+  --backup-dir work/backup-anon --emit-key work/roundtrip-key.json
+```
+
 The script preserves bytes and line endings, backs up originals, validates JSON files
 after replacement (and rolls back a file if it stopped parsing), and reports
 per-pair counts. It also flags suspicious artifacts for the next step.
@@ -179,10 +188,55 @@ Ask whether the user wants a tree with no trace of the originals. If yes, remove
 
 Then re-run `verify.py` over the whole tree, not just the edited scope.
 
+If a restore is planned (Step 8), do not destroy the key yet. Move it and the backups
+outside the published tree instead of deleting them, and tell the user where they are.
+Deleting the key before restoring makes the originals unrecoverable.
+
 Finish with a report: what changed per file, the mapping used, what was deliberately
 left alone (raw data, images, git history), and what still needs a human decision.
 Name the remaining deanonymization vectors explicitly - a partial job described as
 complete is the worst outcome.
+
+## Step 8 - Restore the model's output (reverse pass)
+
+The usual reason to anonymize before sending text to a model is to put the real names
+back afterwards. Reversing is **not** symmetric, and guessing here silently corrupts
+text, so `restore.py` reports instead of guessing.
+
+```bash
+python scripts/restore.py <model-output> --key work/roundtrip-key.json --dry-run
+python scripts/restore.py <model-output> --key work/roundtrip-key.json \
+  --backup-dir work/backup-restore --verify-against work/backup-anon
+```
+
+Three things block a clean reverse, and each has an explicit remedy:
+
+| Blocker | What the script does | Remedy |
+|---|---|---|
+| Many-to-one: two originals became one replacement | Leaves those occurrences untouched and prints them with context | `--decisions-template out.json`, fill it, pass `--decisions` |
+| New target forms the model produced (plural, new case, derivation) | Reports them as unknown, never guesses | Add pairs to `key.reverse_extra` |
+| Legitimate mentions of the target locale | Would be reversed along with everything else | List them in `key.protect_reverse` |
+
+Decisions can be a global choice (`"Globex": "Ромашка"`) or context rules
+(`[{"contains": "Работаю в", "choose": "ООО «Ромашка»"}, {"default": "Ромашка"}]`).
+The script exits non-zero while anything is unresolved, so it drives the same
+fix → re-run loop as `verify.py`.
+
+`--verify-against` compares the restored text with the pre-anonymization originals and
+reports `identical` or `differs`. `differs` is expected when the model edited the text;
+`identical` on an untouched file is the proof that the round trip is lossless.
+
+**The key never goes to the model.** It maps every replacement back to the original,
+so pasting it into a prompt defeats the entire anonymization. Keep it local, out of
+git, and delete it once the restore is done and verified.
+
+When designing a mapping for a job that will be restored, prefer an **injective**
+mapping: one original → one distinct replacement. Collapsing several originals into
+one target is what creates ambiguity, and avoiding it up front is cheaper than
+resolving it occurrence by occurrence afterwards.
+
+See `references/round-trip.md` for the key format, target-language inflection and
+the failure modes in detail.
 
 ## Boundaries
 
@@ -200,10 +254,15 @@ ask or neutralize - do not guess.
   ties specific to Russian-language text. Read before building a mapping for Russian.
 - `references/leak-checklist.md` - where identifiers hide beyond the obvious terms,
   and how to clean up without leaving a deanonymization key behind.
+- `references/round-trip.md` - reverse pass: key format, ambiguity decisions,
+  target-language inflection, key hygiene. Read before restoring.
 - `assets/mapping.example.json` - mapping template with a fictional example.
 - `scripts/scan.py` - inventory of forms, counts, contexts, filenames, handles.
-- `scripts/apply.py` - ordered, protected replacement with backup and JSON safety.
+- `scripts/apply.py` - ordered, protected replacement with backup and JSON safety;
+  `--emit-key` writes the round-trip key.
 - `scripts/verify.py` - leftover and artifact detection, leak vectors, exit code for loops.
+- `scripts/restore.py` - reverse pass: puts the originals back, resolves ambiguity by
+  decision rather than guesswork, checks round-trip integrity.
 
 Scripts need Python 3.8+ and no third-party packages. Run them from the skill
 directory or by absolute path; they import their shared helper from `scripts/`.

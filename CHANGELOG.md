@@ -1,35 +1,61 @@
 # Changelog
 
-All notable changes to this project are documented here.
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Все значимые изменения проекта документируются здесь.
+Формат следует [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/),
+проект придерживается [семантического версионирования](https://semver.org/lang/ru/).
+
+## [0.2.0] - 2026-11-12
+
+### Добавлено
+
+- **Обратный проход (restore).** `scripts/restore.py` возвращает исходные названия
+  в текст, который модель обработала в обезличенном виде.
+- `apply.py --emit-key` — генерация ключа круговорота в момент прямой замены.
+  Ключ содержит пары, список неоднозначных целей и хэши файлов до/после.
+- `references/round-trip.md` — формат ключа, решения по неоднозначности,
+  склонение целевого языка, защита легитимных упоминаний, гигиена ключа.
+- Этап «Step 8 - Restore» в `SKILL.md` и триггеры обратного прохода в описании скилла.
+- `tests/run_roundtrip_test.py` — 24 проверки круговорота: неоднозначность,
+  новые формы цели, легитимные упоминания, контроль неизменённого файла.
+- `--decisions-template` — генерация шаблона решений для неоднозначных целей.
+- `--verify-against` — сравнение восстановленного текста с оригиналом
+  (`identical` / `differs`).
+
+### Изменено
+
+- `SKILL.md`: этап очистки теперь предупреждает, что ключ нельзя удалять
+  до проверенного восстановления.
+- README переведён на русский и расширен: полный справочник CLI, формат карты,
+  формат ключа, сценарии, ограничения.
+- CI гоняет оба теста (прямой и обратный) на Linux и Windows.
+
+### Исправлено
+
+- `common.read_text` возвращал `utf-8-sig` для любого UTF-8 файла, из-за чего
+  запись добавляла BOM, которого не было, и строгие JSON-парсеры падали.
+  Кодировка теперь определяется по реальным байтам; BOM и CRLF сохраняются.
+- Классификация allowlist не видела файлы с BOM и многословные фразы.
+  Теперь многословные записи матчатся по вхождению в span, а не по всей строке.
 
 ## [0.1.0] - 2026-11-11
 
-Initial public release.
+Первый публичный релиз.
 
-### Added
+### Добавлено
 
-- `text-anonymizer` skill: intake → inventory → mapping → approval → apply →
-  language pass → verify → cleanup pipeline for depersonalizing text.
-- Two modes: `substitute` (move references to a target country) and `neutralize`
-  (replace with generic wording). The target locale is always asked, never assumed.
-- `scripts/scan.py` - inventory of inflected forms, counts, contexts, filenames, handles.
-- `scripts/apply.py` - longest-first replacement with homonym protection, backups,
-  structured-file validation and rollback, artifact detection. Original encoding,
-  BOM presence and line endings are preserved byte-for-byte.
-- `scripts/verify.py` - leftovers vs benign homonyms, artifacts, leak vectors
-  (filenames, bytecode caches, git history, mapping and backup files), exit code
-  suitable for a fix → re-verify loop.
-- `references/ru-inflection.md` - Russian declension, demonyms, homonym protection,
-  invisible local ties, handles and puns.
-- `references/leak-checklist.md` - scope tiers, carriers text replacement cannot fix,
-  cleanup of deanonymization keys, report template.
-- `assets/mapping.example.json` - mapping template with fictional example data.
-- Fixture self-test (`tests/run_fixture_test.py`, 37 checks) covering declension,
-  homonym protection, artifact detection, JSON rollback, encoding/BOM/CRLF
-  preservation and key detection.
-- GitHub Actions workflow running the self-test on Linux and Windows, plus a guard
-  against committed bytecode caches.
-- Qoder plugin manifest (`.qoder-plugin/plugin.json`); the same `skills/` directory
-  installs directly into Claude Code.
+- Скилл `text-anonymizer`: пайплайн intake → inventory → mapping → approval →
+  apply → language pass → verify → cleanup.
+- Два режима: `substitute` (перенос привязок в целевую страну) и `neutralize`
+  (замена на обезличенные формулировки). Целевая страна всегда спрашивается.
+- `scripts/scan.py` — инвентарь словоформ, счётчики, контексты, имена файлов, хендлы.
+- `scripts/apply.py` — замена «длинные формы первыми» с защитой омонимов, бэкапом,
+  валидацией структурированных файлов и откатом, детектом артефактов.
+- `scripts/verify.py` — остатки против безобидных омонимов, артефакты, векторы
+  утечки (имена файлов, байткод, git-история, карта и бэкапы), exit-код для цикла.
+- `references/ru-inflection.md` — падежи, демоимы, защита омонимов, невидимые
+  региональные привязки, хендлы и каламбуры.
+- `references/leak-checklist.md` — ярусы объёма, носители вне текста, очистка,
+  шаблон отчёта.
+- `assets/mapping.example.json` — шаблон карты на вымышленных данных.
+- `tests/run_fixture_test.py` — 37 проверок прямого прохода.
+- Манифест Qoder-плагина; тот же каталог `skills/` ставится в Claude Code.

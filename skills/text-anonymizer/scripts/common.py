@@ -274,3 +274,119 @@ def dump_json(path, obj):
     os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(obj, fh, ensure_ascii=False, indent=2)
+
+
+# --- round-trip (restore) support -------------------------------------------
+# The key is the only thing that can re-identify the text. It stays local and is
+# never part of a prompt sent to a model.
+
+KEY_KIND = "text-anonymizer.roundtrip-key"
+KEY_VERSION = 1
+
+
+def sha256_file(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def ambiguous_targets(pairs):
+    """Targets produced by more than one source: reversing them needs a decision."""
+    by_target = {}
+    for pair in pairs:
+        by_target.setdefault(pair["to"], [])
+        if pair["from"] not in by_target[pair["to"]]:
+            by_target[pair["to"]].append(pair["from"])
+    return {t: srcs for t, srcs in by_target.items() if len(srcs) > 1}
+
+
+def build_key(mapping, documents=()):
+    """Derive a round-trip key from an approved mapping.
+
+    Reverse pairs are the forward pairs swapped. Extra target forms (new cases,
+    plurals, derivations the model may produce) are added later via reverse_extra.
+    """
+    pairs = [{"from": p["from"], "to": p["to"]} for p in sorted_pairs(mapping)]
+    reverse = [{"from": p["to"], "to": p["from"]} for p in pairs]
+    return {
+        "kind": KEY_KIND,
+        "version": KEY_VERSION,
+        "target_locale": mapping.get("target_locale"),
+        "mode": mapping.get("mode", "substitute"),
+        "forward": pairs,
+        "reverse": reverse,
+        "reverse_extra": [],
+        "protect_reverse": [],
+        "ambiguous": ambiguous_targets(pairs),
+        "documents": list(documents),
+    }
+
+
+def load_key(path):
+    with open(path, "r", encoding="utf-8-sig") as fh:
+        key = json.load(fh)
+    if key.get("kind") != KEY_KIND:
+        raise ValueError("not a round-trip key (kind=%r)" % key.get("kind"))
+    if key.get("version") != KEY_VERSION:
+        raise ValueError("unsupported key version %r" % key.get("version"))
+    if not key.get("reverse"):
+        raise ValueError("key has no reverse pairs")
+    return key
+
+
+def reverse_pairs(key):
+    """Reverse pairs, longest target first, extras included."""
+    pairs = list(key.get("reverse") or []) + list(key.get("reverse_extra") or [])
+    return sorted(pairs, key=lambda p: (-len(p["from"]), p["from"]))
+
+
+def covered_reverse_forms(key):
+    return {p["from"].lower() for p in reverse_pairs(key)}
+
+
+def unknown_target_forms(text, key):
+    """Tokens built on a target stem that no reverse pair covers.
+
+    These are the forms the model produced that the forward pass never created
+    (new case, plural, derivation). They are reported, never guessed.
+    """
+    covered = covered_reverse_forms(key)
+    stems = sorted({p["from"] for p in reverse_pairs(key)}, key=len, reverse=True)
+    found = {}
+    for stem in stems:
+        if not stem or " " in stem.strip():
+            continue
+        for m in re.finditer(r"[\w-]*" + re.escape(stem) + r"[\w-]*", text,
+                             re.IGNORECASE | re.UNICODE):
+            token = m.group(0)
+            if token.lower() not in covered:
+                found.setdefault(token, 0)
+                found[token] += 1
+    return [{"form": f, "count": n} for f, n in sorted(found.items(), key=lambda kv: -kv[1])]
+
+
+def resolve_choice(target, context, decisions):
+    """Pick the source for an ambiguous target using a decisions entry.
+
+    A string is a global choice. A list of {"contains": ..., "choose": ...} rules
+    is matched against the surrounding context, with an optional {"default": ...}.
+    Returns None when no decision applies - the caller must leave the text alone.
+    """
+    entry = (decisions or {}).get(target)
+    if entry is None:
+        return None
+    if isinstance(entry, str):
+        return entry
+    if isinstance(entry, list):
+        low = (context or "").lower()
+        default = None
+        for rule in entry:
+            if "default" in rule:
+                default = rule["default"]
+            elif rule.get("contains") and rule["contains"].lower() in low:
+                return rule.get("choose")
+        return default
+    return None

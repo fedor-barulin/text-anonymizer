@@ -1,43 +1,78 @@
 # Text Anonymizer
 
-Depersonalize text by moving its locale: replace employer, legal entity, city, region,
-districts, domains, email, partner banks, local brands, channel names and handles with
-equivalents from another country — or neutralize them into generic wording.
+**Обезличивание текста с переносом локальных привязок в другую страну — и возвратом исходных названий обратно.**
 
-A skill for AI coding agents (Qoder, Claude Code) with three Python utilities that do
-the deterministic part.
+Скилл для AI-агентов (Qoder, Claude Code) плюс четыре Python-утилиты, которые делают
+детерминированную часть работы. Заменяет работодателя, юрлицо, город, регион, районы,
+домены, почту, банки-партнёры, локальные бренды, названия каналов и хендлы на аналоги
+другой страны — либо обезличивает их до нейтральных формулировок.
 
-**The target country is always your choice.** The skill asks what you are anonymizing
-and where to move it before touching a file. There is no default destination.
+**Целевая страна — всегда ваш выбор.** Скилл спрашивает, что обезличиваем и куда
+переносим, прежде чем тронуть хоть один файл. Значения по умолчанию нет.
 
 ```
 intake → inventory → mapping → approval → apply → language pass → verify → cleanup
+                                                          ↘ restore (обратный проход)
 ```
 
-## Why this exists
+---
 
-Find-and-replace on a city name looks like it works and fails in four predictable ways:
+## Содержание
 
-1. **Grammar breaks.** Russian (and any inflected language) needs the right case:
-   «выручка девелоперов *Зареченска*» → «…Сингапур**а**», not «…Сингапур».
-2. **Unrelated words get mangled.** A brand root lives inside ordinary words —
-   `мотивация`, `лейтмотив`, `по мотивам`, English `motive`, surnames, other companies.
-   Replacing by root turns prose into nonsense.
-3. **The strongest identifiers survive.** District names, regional banks and railways,
-   local bloggers, `@city_handles`, phone area codes, filenames, git author emails,
-   `.pyc` caches. None of them contain the city name you searched for.
-4. **The cleanup leaks.** The mapping file and the backups list every original name in
-   one place. They are a deanonymization key, and they are usually left in the tree.
+- [Зачем это нужно](#зачем-это-нужно)
+- [Установка](#установка)
+- [Быстрый старт](#быстрый-старт)
+- [Как работает пайплайн](#как-работает-пайплайн)
+- [Два режима](#два-режима)
+- [Справочник CLI](#справочник-cli)
+- [Формат карты замен](#формат-карты-замен)
+- [Обратный проход и ключ круговорота](#обратный-проход-и-ключ-круговорота)
+- [Неоднозначность и решения](#неоднозначность-и-решения)
+- [Русский язык: падежи, омонимы, невидимые привязки](#русский-язык)
+- [Что не правится и не восстанавливается](#что-не-правится-и-не-восстанавливается)
+- [Безопасность и гигиена ключа](#безопасность-и-гигиена-ключа)
+- [Структура репозитория](#структура-репозитория)
+- [Разработка и тесты](#разработка-и-тесты)
+- [Границы использования](#границы-использования)
+- [Языковая поддержка](#языковая-поддержка)
+- [Лицензия](#лицензия)
 
-This skill encodes the pipeline that avoids all four, and reports honestly what it
-could not fix.
+---
 
-## Install
+## Зачем это нужно
 
-### Qoder (plugin)
+Обычный find-and-replace по названию города выглядит рабочим и проваливается
+четырьмя предсказуемыми способами.
 
-Copy or clone this repository into your Qoder plugins directory, or install it from
-your local path:
+**1. Ломается грамматика.** В русском (и любом флективном языке) нужен правильный падеж:
+
+```
+Было:  выручка девелоперов Зареченска растёт
+Плохо: выручка девелоперов Сингапур растёт      ← именительный вместо родительного
+Хорошо: выручка девелоперов Сингапура растёт
+```
+
+**2. Калечатся посторонние слова.** Корень бренда живёт внутри обычных слов:
+`мотивация`, `лейтмотив`, `по мотивам`, `мотиватор`, английское `motive`, фамилии,
+другие компании с тем же корнем. Замена по корню превращает текст в кашу.
+
+**3. Выживают самые сильные идентификаторы.** Названия районов, региональные банки
+и железные дороги, местные блогеры, `@city_handles`, телефонные коды, имена файлов,
+email автора в git-коммитах, кэши `.pyc`. Ни один из них не содержит названия города,
+которое вы искали.
+
+**4. Утекает сама очистка.** Карта замен и бэкапы перечисляют все исходные названия
+в одном месте. Это ключ деанонимизации, и его обычно оставляют в дереве.
+
+Скилл закрывает все четыре сценария и честно сообщает, что починить не смог.
+
+---
+
+## Установка
+
+### Qoder (плагин)
+
+Скопируйте или клонируйте репозиторий в каталог плагинов Qoder:
 
 ```
 <plugins-dir>/text-anonymizer/
@@ -45,181 +80,527 @@ your local path:
   skills/text-anonymizer/SKILL.md
 ```
 
-For project-local use, put the skill where Qoder discovers project skills:
+Для использования внутри проекта положите скилл туда, где Qoder ищет проектные скиллы:
 
 ```
-<your-project>/.qoder/skills/text-anonymizer/
+<ваш-проект>/.qoder/skills/text-anonymizer/
 ```
 
-A junction or symlink to `skills/text-anonymizer` works and avoids a second copy.
+Подойдёт junction или симлинк на `skills/text-anonymizer` — это избавляет от второй копии.
 
-### Claude Code (skill)
+### Claude Code (скилл)
 
-The `SKILL.md` format is the same, so no conversion is needed. Copy the skill directory:
+Формат `SKILL.md` одинаковый, конвертация не нужна. Скопируйте каталог скилла:
 
 ```bash
-# personal, available in all projects
+# личный, доступен во всех проектах
 cp -r skills/text-anonymizer ~/.claude/skills/
 
-# or project-local
-cp -r skills/text-anonymizer <your-project>/.claude/skills/
+# или проектный
+cp -r skills/text-anonymizer <ваш-проект>/.claude/skills/
 ```
 
-### Manual / any agent
+### Вручную / любой агент
 
-The scripts are standalone and need only Python 3.8+:
+Скрипты автономны, нужен только Python 3.8+:
 
 ```bash
 python skills/text-anonymizer/scripts/scan.py --help
 ```
 
-Point any agent at `skills/text-anonymizer/SKILL.md` and it can follow the workflow.
+Любому агенту можно указать на `skills/text-anonymizer/SKILL.md` — он сможет следовать
+workflow.
 
-## Usage
+---
 
-Ask in natural language:
+## Быстрый старт
 
-- «Обезличь мои посты: убери работодателя и город»
-- "Depersonalize this resume and move the locale to Singapore"
-- «Отсингапурь черновик, но работодателя просто обезличь, без замены»
-- "Find every mention of my employer and city in this project"
-
-The agent will ask for:
-
-| Question | Why it matters |
-|---|---|
-| What are we anonymizing? | Authored text, working data and raw dumps differ by orders of magnitude |
-| Which target country? | Never assumed; you pick |
-| `substitute` or `neutralize`? | Substitution creates new factual claims; neutralization does not |
-| Entity counterparts | Legal entity, brand, domains, email, partner bank need real decisions |
-| Raw data and non-text carriers | Chat exports, images, git history — include or leave alone |
-
-Then it shows the mapping for approval before applying anything.
-
-### Two modes
-
-| Mode | Result | Fits |
-|---|---|---|
-| `substitute` | «Ромашка» → «Globex», «Зареченск» → «Сингапур» | Text should read as if the author lives there |
-| `neutralize` | «Ромашка» → «приложение оператора связи» | Remove the old identity without claiming a new one |
-
-Mixing is normal: substitute the geography, neutralize the employer.
-
-## CLI reference
+Полный сценарий: обезличить → отдать модели → вернуть исходные названия.
 
 ```bash
-# 1. Inventory: every inflected form, counts, contexts, filenames, handles
-python skills/text-anonymizer/scripts/scan.py ./docs \
-  --terms "Employer,City" --handles --json inventory.json
+cd skills/text-anonymizer
 
-# 2. Dry run: what would change, nothing written
-python skills/text-anonymizer/scripts/apply.py ./docs \
-  --mapping mapping.json --dry-run
+# 1. Инвентарь: что вообще есть в тексте
+python scripts/scan.py ../../docs --terms "Ромашка,Зареченск" --handles --json inventory.json
 
-# 3. Apply: backup required unless you explicitly opt out
-python skills/text-anonymizer/scripts/apply.py ./docs \
-  --mapping mapping.json --backup-dir ./backup-anon --report apply-report.json
+# 2. Карта замен (заполните по шаблону assets/mapping.example.json)
+#    и сухой прогон — ничего не записывается
+python scripts/apply.py ../../docs --mapping mapping.json --dry-run
 
-# 4. Verify: non-zero exit while real problems remain
-python skills/text-anonymizer/scripts/verify.py ./docs \
-  --terms "Employer,City" --targets "NewCo,NewCity" \
-  --allowlist allow.txt --expected-forms "NewCities,NewCity's"
+# 3. Применение с бэкапом и ключом круговорота
+python scripts/apply.py ../../docs --mapping mapping.json \
+  --backup-dir ../../backup-anon --emit-key ../../roundtrip-key.json
+
+# 4. Проверка: не осталось ли исходных названий
+python scripts/verify.py ../../docs --terms "Ромашка,Зареченск" \
+  --targets "Globex,Сингапур" --allowlist allow.txt
+
+# ... обезличенный текст уходит в модель. Ключ НЕ уходит ...
+
+# 5. Возврат исходных названий в ответе модели
+python scripts/restore.py ../../model-output --key ../../roundtrip-key.json --dry-run
+python scripts/restore.py ../../model-output --key ../../roundtrip-key.json \
+  --backup-dir ../../backup-restore --verify-against ../../backup-anon
 ```
 
-`verify.py` separates genuine leftovers from benign homonyms, flags artifacts
-(doubled tokens, glued suffixes), and reports the carriers text replacement cannot
-fix: filenames, `.pyc` caches, git history, mapping and backup files, images.
+Через агента то же самое делается обычной фразой:
 
-### Mapping format
+- «Обезличь мои посты: убери работодателя и город»
+- «Отсингапурь черновик, но работодателя просто обезличь, без замены»
+- «Найди все упоминания моего работодателя и города в проекте»
+- «Верни исходные названия в ответе Claude»
 
-See [`skills/text-anonymizer/assets/mapping.example.json`](skills/text-anonymizer/assets/mapping.example.json).
+Агент спросит объём, целевую страну, режим и соответствия сущностей, покажет карту
+на утверждение и только потом применит.
+
+---
+
+## Как работает пайплайн
+
+| Этап | Что происходит | Что будет, если пропустить |
+|---|---|---|
+| **Intake** | Вопросы: что обезличиваем, куда, какой режим, соответствия сущностей | Агент угадает страну и объём, переделывать придётся всё |
+| **Inventory** | `scan.py`: все словоформы, счётчики, контексты, имена файлов, хендлы | Не узнаете про падежи и каламбуры, замена их сломает |
+| **Mapping** | Карта пар + protect-лист омонимов | Замена по корню искалечит обычные слова |
+| **Approval** | Карта показывается пользователю до применения | Подстановка станет фактом о человеке без его согласия |
+| **Apply** | `apply.py`: бэкап, защита омонимов, валидация JSON, откат | Необратимая порча файлов |
+| **Language pass** | Вычитка каждого изменённого предложения | «каналы Сингапур и Москвы», `Globexация` |
+| **Verify** | `verify.py`: остатки, артефакты, векторы утечки | Ложное «готово» при живых идентификаторах |
+| **Cleanup** | Удаление карты, бэкапов, `.pyc` | Ключ деанонимизации остаётся в дереве |
+| **Restore** | `restore.py`: возврат исходников по ключу | Обезличенный текст останется обезличенным навсегда |
+
+---
+
+## Два режима
+
+| Режим | Результат | Когда подходит |
+|---|---|---|
+| `substitute` | «Ромашка» → «Globex», «Зареченск» → «Сингапур» | Текст должен читаться так, будто автор живёт там |
+| `neutralize` | «Ромашка» → «приложение оператора связи» | Убрать старую идентичность, не заявляя новую |
+
+Смешивать нормально: географию подменить, работодателя обезличить.
+
+**Важно:** `neutralize` необратим. «Приложение оператора связи» не несёт информации
+о том, какой это оператор — восстанавливать нечего. Если планируете возврат,
+работодателя нужно именно подменять.
+
+---
+
+## Справочник CLI
+
+Все скрипты: Python 3.8+, без сторонних пакетов. Запускаются из каталога скилла
+или по абсолютному пути.
+
+### `scan.py` — инвентарь
+
+```bash
+python scripts/scan.py <пути...> --terms "Работодатель,Город" [опции]
+```
+
+| Флаг | Назначение |
+|---|---|
+| `--terms` | Термины через запятую |
+| `--terms-file` | Файл с терминами построчно (`#` — комментарий) |
+| `--ext` | Расширения через запятую (по умолчанию — распространённые текстовые) |
+| `--exclude` | Имена каталогов для пропуска |
+| `--samples` | Число примеров контекста на термин на файл (по умолчанию 3) |
+| `--width` | Ширина фрагмента контекста (по умолчанию 70) |
+| `--handles` | Дополнительно вывести `@handles`, содержащие термин |
+| `--include-hidden` | Не пропускать dotfiles/dotdirs |
+| `--json` | Записать инвентарь в JSON |
+
+Показывает **все словоформы** с частотами — это и есть список падежей, которые надо
+покрыть картой. Отдельно выводит имена файлов и хендлы с термином.
+
+### `apply.py` — прямая замена
+
+```bash
+python scripts/apply.py <пути...> --mapping mapping.json [опции]
+```
+
+| Флаг | Назначение |
+|---|---|
+| `--mapping` | Карта замен (обязательно) |
+| `--dry-run` | Показать, что изменится, ничего не записывать |
+| `--backup-dir` | Скопировать оригиналы сюда перед записью |
+| `--no-backup` | Явный отказ от бэкапа |
+| `--emit-key` | Записать ключ круговорота для `restore.py` |
+| `--report` | JSON-отчёт |
+| `--ext`, `--exclude`, `--include-hidden` | Фильтры обхода |
+
+Гарантии: пары применяются **от длинных к коротким**; омонимы из `protect`
+маскируются и возвращаются; кодировка, BOM и переводы строк сохраняются побайтово;
+JSON/JSONL валидируются после замены, и файл, переставший парситься, **остаётся
+нетронутым**. Без `--backup-dir` или `--no-backup` скрипт отказывается писать.
+
+Коды возврата: `0` — успех, `1` — были ошибки валидации, `2` — ошибка карты или отказ от бэкапа.
+
+### `verify.py` — проверка
+
+```bash
+python scripts/verify.py <пути...> --terms "Исходные" --targets "Замены" [опции]
+```
+
+| Флаг | Назначение |
+|---|---|
+| `--terms`, `--terms-file` | Исходные термины для поиска |
+| `--targets` | Замены — для детекта артефактов |
+| `--allowlist` | Файл фрагментов, делающих совпадение безобидным |
+| `--expected-forms` | Легитимные словоформы замен (чтобы не флагать правильную грамматику) |
+| `--max-objects` | Лимит осмотра loose-объектов git (по умолчанию 2000) |
+| `--ext`, `--exclude`, `--json` | Фильтры и отчёт |
+
+Разделяет **настоящие остатки** и **безобидные омонимы**, флагает артефакты
+(двойные токены, приклеенные суффиксы) и проверяет векторы утечки: имена файлов,
+`.pyc`, git-историю и config, файлы карт и каталоги бэкапов, картинки в объёме.
+
+Код возврата ненулевой, пока есть реальные проблемы — это позволяет крутить цикл
+«починил → перепроверил».
+
+### `restore.py` — обратный проход
+
+```bash
+python scripts/restore.py <пути...> --key key.json [опции]
+```
+
+| Флаг | Назначение |
+|---|---|
+| `--key` | Ключ круговорота от `apply.py --emit-key` (обязательно) |
+| `--dry-run` | Показать, что изменится, ничего не записывать |
+| `--decisions` | JSON с решениями по неоднозначным целям |
+| `--decisions-template` | Записать шаблон решений и выйти |
+| `--verify-against` | Файл или каталог с оригиналами до обезличивания |
+| `--backup-dir`, `--no-backup` | Бэкап обезличенного входа перед записью |
+| `--report`, `--ext`, `--exclude`, `--include-hidden` | Отчёт и фильтры |
+
+Коды возврата: `0` — чисто, `1` — есть нерешённые неоднозначности или непокрытые
+формы, `2` — ошибка ключа или отказ от бэкапа.
+
+---
+
+## Формат карты замен
+
+Шаблон: [`skills/text-anonymizer/assets/mapping.example.json`](skills/text-anonymizer/assets/mapping.example.json).
 
 ```json
 {
   "target_locale": "Singapore",
   "mode": "substitute",
-  "protect": ["мотиваци", "лейтмотив", "по мотивам", "motive"],
-  "expected_forms": ["Сингапур", "Сингапура", "Сингапуре"],
+  "protect": ["мотиваци", "лейтмотив", "по мотивам", "мотиватор", "motive"],
+  "expected_forms": ["Сингапур", "Сингапура", "Сингапуре", "Сингапуром"],
   "pairs": [
-    {"from": "ООО «Ромашка» (Romashka Telecom)", "to": "Globex Telecom", "note": "legal entity"},
-    {"from": "Зареченска", "to": "Сингапура", "note": "genitive"},
-    {"from": "Зареченск", "to": "Сингапур", "note": "nominative"}
+    {"from": "ООО «Ромашка» (Romashka Telecom)", "to": "Globex Telecom", "note": "юрлицо"},
+    {"from": "Зареченска", "to": "Сингапура", "note": "родительный"},
+    {"from": "Зареченске", "to": "Сингапуре", "note": "предложный"},
+    {"from": "Зареченск", "to": "Сингапур", "note": "именительный"},
+    {"from": "Ромашка", "to": "Globex", "note": "бренд, применяется последним"}
   ]
 }
 ```
 
-- `pairs` are applied **longest-first** automatically, so a short pair cannot eat the
-  context a longer one needed.
-- `protect` fragments are masked before replacement and restored afterwards — this is
-  what keeps ordinary words intact.
-- `expected_forms` lists legitimate inflections of the targets so the artifact checker
-  does not flag correct grammar.
+| Поле | Назначение |
+|---|---|
+| `target_locale` | Целевая страна/локаль (для отчёта) |
+| `mode` | `substitute` или `neutralize` |
+| `pairs` | Пары «исходное → замена». Сортируются по длине автоматически |
+| `protect` | Фрагменты, которые **не должны измениться**: маскируются до замены и возвращаются после |
+| `expected_forms` | Легитимные словоформы замен — чтобы детектор артефактов не флагал правильную грамматику |
+| `note` | Комментарий для человека, на логику не влияет |
 
-## What it will not do
+**Почему порядок важен.** Короткая пара, применённая раньше длинной, съедает контекст,
+который был нужен длинной. Результат — двойные токены вроде `Globex Globex`.
+Скрипт сортирует сам, но специфичные многословные фразы всё равно пишите явно.
 
-- Invent biographical details. If a counterpart is unknown, it asks or neutralizes.
-- Silently ignore images, filenames, git history or document metadata — they are
-  reported as remaining vectors.
-- Rewrite git history without explicit approval (irreversible, affects pushed commits).
-- Help fabricate credentials, alter identity or financial documents, or impersonate a
-  real person or company. This is privacy and publication hygiene for text you own.
+**Почему нужен protect.** Искать надо по корню, а заменять — только по явным
+словоформам и фразам. Замена по корню по прозе — самая разрушительная ошибка
+в этой задаче.
 
-## Repository layout
+---
 
+## Обратный проход и ключ круговорота
+
+Обычная причина обезличить текст перед отправкой модели — вернуть настоящие названия
+после. Ключ создаётся в момент прямой замены и живёт **только локально**.
+
+```json
+{
+  "kind": "text-anonymizer.roundtrip-key",
+  "version": 1,
+  "target_locale": "Singapore",
+  "mode": "substitute",
+  "forward": [{"from": "Зареченск", "to": "Сингапур"}],
+  "reverse": [{"from": "Сингапур", "to": "Зареченск"}],
+  "reverse_extra": [{"from": "Сингапуры", "to": "Зареченски"}],
+  "protect_reverse": ["Сингапурские авиалинии"],
+  "ambiguous": {"Globex": ["ООО «Ромашка»", "Ромашка"]},
+  "documents": [{"path": "...", "sha256_before": "...", "sha256_after": "..."}]
+}
 ```
-.github/workflows/test.yml       CI: self-test on Linux + Windows
-.qoder-plugin/plugin.json        Qoder plugin manifest
-assets/avatar.svg                plugin icon
-skills/text-anonymizer/
-  SKILL.md                       workflow, intake questions, boundaries
-  references/ru-inflection.md    Russian declension, homonyms, invisible ties, puns
-  references/leak-checklist.md   scope tiers, leak carriers, cleanup, report template
-  scripts/common.py              shared helpers
-  scripts/scan.py                inventory
-  scripts/apply.py               protected replacement with backup and rollback
-  scripts/verify.py              leftovers, artifacts, leak vectors
-  assets/mapping.example.json    mapping template (fictional data)
-tests/run_fixture_test.py        self-test on a fictional fixture
-LICENSE                          MIT
-CHANGELOG.md                     release notes
-```
 
-One skill directory serves both Qoder and Claude Code — there is no second copy to
-keep in sync.
+| Поле | Назначение |
+|---|---|
+| `forward` / `reverse` | Утверждённые пары и их переворот |
+| `reverse_extra` | Формы цели, которые породила модель, а прямой проход не создавал |
+| `protect_reverse` | Фразы, которые должны пережить обратный проход нетронутыми |
+| `ambiguous` | Цели с несколькими возможными источниками; вычисляется, не пишется руками |
+| `documents` | Хэши до/после — чтобы понимать, с какой версией файла работаете |
 
-## Development
+Жизненный цикл: создать при apply → держать локально, пока работает модель →
+дополнять `reverse_extra` / `protect_reverse` по мере появления новых форм →
+restore → verify → удалить.
 
-Requirements: Python 3.8+, no third-party packages.
+### Три блокера обратного прохода
+
+Обратная замена **не симметрична**. `restore.py` не угадывает, а сообщает:
+
+| Блокер | Поведение | Лечение |
+|---|---|---|
+| **Схлопывание**: два исходника стали одной заменой | Вхождения остаются нетронутыми, печатаются с контекстом | `--decisions-template` → заполнить → `--decisions` |
+| **Новые формы цели**: модель написала `Сингапуры`, `сингапурцам`, `по-сингапурски` | Сообщает как неизвестные, не трогает | Добавить пары в `key.reverse_extra` |
+| **Легитимные упоминания**: модель реально пишет про Сингапур | Были бы развёрнуты вместе со всем остальным | Перечислить фразы в `key.protect_reverse` |
+
+Четвёртая проблема не лингвистическая: модель могла перефразировать, переставить,
+перевести или выбросить предложение. Никакой ключ не восстановит то, чего в тексте больше нет.
+
+### Проверка круговорота
 
 ```bash
-python tests/run_fixture_test.py
+python scripts/restore.py out/ --key key.json --verify-against backup-anon/
 ```
 
-The self-test builds a fictional fixture in a temp directory and runs 37 checks:
-declension correctness, homonym protection, artifact detection, JSON rollback,
-encoding/BOM/CRLF preservation, and detection of mapping/backup files as
-deanonymization keys. It exits non-zero on any failure and leaves no bytecode behind.
+- `identical` — возврат без потерь. На файле, который модель вернула дословно, это
+  доказательство полноты ключа и пар.
+- `differs` — ожидаемо, если модель правила текст. Читайте diff: разница должна быть
+  правкой модели, а не пропущенным или неверным восстановлением.
+- `no counterpart found` — оригинала нет в каталоге бэкапов, проверьте путь.
 
-CI runs the same test on Linux and Windows (Python 3.11 and 3.12) and fails if any
-`__pycache__` or `.pyc` appears in the working tree.
+**Держите хотя бы один файл, который модель не меняет, как контроль.** Без него
+не отличить «ключ неполный» от «модель переписала».
 
-Validate the plugin manifest with the validator bundled in Qoder's `create-plugin`
-skill:
+---
+
+## Неоднозначность и решения
+
+**Если планируете возврат — делайте карту инъективной:** один исходник → одна
+уникальная замена. Схлопывать бренд `Ромашка` и юрлицо `ООО «Ромашка»` в один
+`Globex` удобно для чтения и дорого для возврата. Разные замены (`Globex`,
+`Globex Legal`) убирают проблему полностью.
+
+Когда схлопывания не избежать:
+
+```bash
+python scripts/restore.py out/ --key key.json --decisions-template decisions.json
+# заполняете, затем
+python scripts/restore.py out/ --key key.json --decisions decisions.json
+```
+
+Решение — глобальный выбор или контекстные правила:
+
+```json
+{
+  "Globex": [
+    {"contains": "Работаю в", "choose": "ООО «Ромашка»"},
+    {"contains": "приложение", "choose": "Ромашка"},
+    {"default": "Ромашка"}
+  ]
+}
+```
+
+Правила матчатся со строкой, содержащей вхождение; первое совпадение выигрывает,
+`default` применяется, если ничего не совпало. Без решения вхождение остаётся
+нетронутым и попадает в отчёт с контекстом.
+
+---
+
+## Русский язык
+
+Подробности — в [`references/ru-inflection.md`](skills/text-anonymizer/references/ru-inflection.md).
+
+**Падежи.** Инвентарь показывает словоформы, а не леммы. Нужна пара на каждую форму:
+
+| Падеж | Исходное | Замена |
+|---|---|---|
+| Именительный | Зареченск | Сингапур |
+| Родительный | Зареченска | Сингапура |
+| Дательный | Зареченску | Сингапуру |
+| Винительный | Зареченск | Сингапур |
+| Творительный | Зареченском | Сингапуром |
+| Предложный | Зареченске | Сингапуре |
+
+Несклоняемые цели (Косово, Монако) окончания не берут — предложные конструкции
+придётся перефразировать. Регион и город ведут себя по-разному: `Зареченская область`
+→ `Сингапур`, а не `Сингапурская область`.
+
+**Демоимы и прилагательные** несут привязку не слабее названия города:
+`зареченчанин` → `сингапурец`, `зареченский` → `сингапурский`, все падежные формы.
+
+**Омонимы.** Корень бренда живёт в обычных словах. В protect: `мотиваци`,
+`мотиватор`, `мотивирован`, `по мотивам`, `лейтмотив`, `motive`, фамилии,
+посторонние компании. Та же ловушка у географии: корень региона может принадлежать
+спортклубу, заводскому району, другой компании или продуктовому бренду.
+
+**Невидимые привязки** — то, что не содержит названия города и потому не находится
+поиском по термину:
+
+- районы и пригороды (сильнейший отпечаток — их упоминают только местные);
+- региональная инфраструктура: железная дорога, метро, аэропорты, реки, парки;
+- региональные компании: банки, ЖКХ, ритейл, застройщики, заводы, холдинги;
+- местные СМИ и блогеры;
+- коды: телефонный (`+7 3XX`), почтовые префиксы, региональные доменные зоны
+  (осторожно: hex-цвет `#22343a` содержит `343`);
+- вузы, конференции, выставочные центры;
+- демоимы и сленг.
+
+**Хендлы и каламбуры.** Меняете отображаемое имя канала — меняйте и `@handle`,
+иначе утекает ровно то, что прятали. Каламбур на названии города при буквальной
+подстановке умирает: придумайте эквивалент на целевом имени или обезличьте.
+
+---
+
+## Что не правится и не восстанавливается
+
+### Носители, которые текстовая замена не берёт
+
+| Носитель | Почему | Что делать |
+|---|---|---|
+| Картинки и скриншоты | Текст в пикселях; узнаваемый визуал опознаёт место без слов | Перерисовать/заменить, отчитаться |
+| Имена файлов и каталогов | Переименование ломает ссылки | Список + вопрос пользователю |
+| Git-история | Автор и email в коммитах, reflog, remote URL, сообщения | `git filter-repo`, необратимо, только с явного согласия |
+| Байткод и кэши | `.pyc` хранит строковые литералы исходника | Удалить сгенерированные кэши |
+| Бинарные документы | `.docx`, `.pdf`, `.xlsx` — текст в контейнере | Инструмент, понимающий формат, или экспорт-правка-импорт |
+| Метаданные | EXIF GPS, свойства документа, PDF-метаданные | Чистить отдельно |
+| Внешние идентификаторы | `@handles`, URL, телефоны, email, ID аккаунтов | Решение по каждому: сменить = сломать ссылку |
+
+### Что нельзя восстановить
+
+- Термины, которые модель выбросила, перефразировала до неузнаваемости или перевела.
+- Обезличенные (`neutralize`) формулировки — информации об исходнике в них нет.
+- Выдуманное моделью содержимое. Восстановление не должно превращать выдумку
+  в утверждение о реальном работодателе или городе.
+
+Об этом нужно сообщать честно, а не подставлять замену силой.
+
+---
+
+## Безопасность и гигиена ключа
+
+Карта замен, ключ круговорота и бэкапы содержат **все исходные названия**. Это ключ
+деанонимизации. Относитесь к нему как к учётным данным:
+
+- **Никогда не кладите ключ в промпт.** Ни файл, ни фрагмент, ни «только пары».
+  Весь смысл прямого прохода в том, что модель этой карты не видит.
+- Держите вне публикуемого дерева и вне git (`.gitignore` уже настроен).
+- **Не удаляйте ключ до проверенного восстановления** — иначе исходники
+  становятся невосстановимыми.
+- Удалите ключ, файл решений и бэкапы восстановления после приёмки текста,
+  если пользователю не нужен аудит-след.
+- Обезличенный текст + ключ = оригинал. Кто держит оба — держит всё.
+  Раздать «анонимную» версию и утечь ключом = полная утечка.
+
+Прочие гарантии:
+
+- Массовая правка требует `--backup-dir` или явного `--no-backup`.
+- Структурированные файлы валидируются после замены; сломавшийся файл остаётся
+  нетронутым и попадает в отчёт.
+- Кодировка, BOM и переводы строк сохраняются побайтово.
+- Картинки, имена файлов, git-история и метаданные попадают в отчёт как остаточные
+  векторы, а не игнорируются молча.
+
+---
+
+## Структура репозитория
+
+```
+.github/workflows/test.yml       CI: оба теста на Linux и Windows
+.qoder-plugin/plugin.json        манифест Qoder-плагина
+assets/avatar.svg                иконка
+skills/text-anonymizer/
+  SKILL.md                       workflow, вопросы intake, обратный проход, границы
+  references/ru-inflection.md    падежи, омонимы, невидимые привязки, каламбуры
+  references/leak-checklist.md   ярусы объёма, носители утечки, очистка, шаблон отчёта
+  references/round-trip.md       обратный проход: ключ, решения, склонение цели, гигиена
+  scripts/common.py              общие хелперы
+  scripts/scan.py                инвентарь
+  scripts/apply.py               защищённая замена с бэкапом и откатом, --emit-key
+  scripts/verify.py              остатки, артефакты, векторы утечки
+  scripts/restore.py             обратный проход
+  assets/mapping.example.json    шаблон карты (вымышленные данные)
+tests/run_fixture_test.py        self-test прямого прохода (37 проверок)
+tests/run_roundtrip_test.py      self-test круговорота (24 проверки)
+LICENSE                          MIT
+CHANGELOG.md                     история версий
+```
+
+Один каталог скилла обслуживает и Qoder, и Claude Code — второй копии,
+которую надо синхронизировать, нет.
+
+---
+
+## Разработка и тесты
+
+Требования: Python 3.8+, без сторонних пакетов.
+
+```bash
+python tests/run_fixture_test.py     # 37 проверок прямого прохода
+python tests/run_roundtrip_test.py   # 24 проверки круговорота
+```
+
+Тесты строят вымышленную фикстуру во временном каталоге и проверяют:
+
+- согласование падежей, замену демоимов, юрлица, домена, хендла;
+- выживание омонимов (`Мотивация`, `лейтмотив`, `по мотивам`, `мотиватор`, `ромашковый чай`);
+- детект подложенных артефактов (`Globex Globex`, `Globexград`);
+- откат JSON при ломающей карте;
+- сохранение кодировки, BOM и CRLF;
+- обнаружение карты и бэкапов как ключей деанонимизации;
+- неоднозначность, новые формы цели, защиту легитимных упоминаний;
+- `identical` на контрольном файле и `differs` на изменённом;
+- отсутствие байткода в каталоге скилла.
+
+Оба теста возвращают ненулевой код при провале и не оставляют кэшей
+(`PYTHONDONTWRITEBYTECODE=1`).
+
+CI гоняет оба теста на Linux и Windows (Python 3.11 и 3.12) и падает, если
+в рабочем дереве появился `__pycache__` или `.pyc`.
+
+Валидация манифеста валидатором из скилла `create-plugin`:
 
 ```bash
 python <create-plugin>/scripts/validate_qoder_plugin.py .
 ```
 
-After creating the GitHub repository, add `repository` and `homepage` to
-`.qoder-plugin/plugin.json`.
+После создания GitHub-репозитория впишите `repository` и `homepage`
+в `.qoder-plugin/plugin.json`.
 
-## Language support
+---
 
-The workflow is language-agnostic. Inflection handling is documented for Russian in
-`references/ru-inflection.md`; the same approach (inventory forms → map each form →
-grammar pass) applies to any inflected language. Contributions adding reference files
-for other languages are welcome.
+## Границы использования
 
-## License
+Это приватность и публикационная гигиена для текста, которым вы владеете.
+Не используйте для:
+
+- фабрикации удостоверений и регалий;
+- изменения документов, удостоверяющих личность, и финансовых документов;
+- выдачи себя за реального человека или компанию;
+- введения в заблуждение сервиса, который проверяет эти сведения.
+
+И главное: **не выдумывайте биографические детали**, чтобы заполнить пробел.
+Если соответствие неизвестно — спросите или обезличьте, но не угадывайте.
+
+---
+
+## Языковая поддержка
+
+Workflow не зависит от языка. Обработка словоизменения документирована для русского
+в `references/ru-inflection.md`; тот же подход (инвентарь форм → пара на каждую форму →
+грамматическая вычитка) работает для любого флективного языка. Pull request'ы
+со справочниками для других языков приветствуются.
+
+Сам `SKILL.md` и справочники написаны по-английски, чтобы скилл был полезен
+не только русскоязычным пользователям; этот README — русская версия документации.
+
+---
+
+## Лицензия
 
 [MIT](LICENSE) © Fedor Barulin

@@ -24,9 +24,13 @@ __MACOSX/
 # Local working data - never commit anonymization keys
 mapping.json
 mapping.local.json
+roundtrip-key.json
+key.json
+decisions.json
 inventory.json
 verify.json
 apply-report.json
 allow.txt
 backup-anon/
+backup-restore/
 *-workspace/

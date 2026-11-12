@@ -1,8 +1,8 @@
 {
   "name": "text-anonymizer",
   "displayName": "Text Anonymizer",
-  "version": "0.1.0",
-  "description": "Depersonalize text by swapping locale-bound references (employer, city, region, domains, banks, handles) to another country, or neutralizing them, with inflection-aware replacement and leak verification.",
+  "version": "0.2.0",
+  "description": "Depersonalize text by swapping locale-bound references (employer, city, region, domains, banks, handles) to another country or neutralizing them, then restore the originals in a model's output with a local round-trip key.",
   "author": {
     "name": "Fedor Barulin"
   },
@@ -13,8 +13,7 @@
     "anonymization",
     "privacy",
     "redaction",
-    "localization",
-    "claude-code"
+    "localization"
   ],
   "category": "developer-tools",
   "tags": [

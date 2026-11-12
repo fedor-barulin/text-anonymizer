@@ -2,8 +2,8 @@
 """Self-test for the text-anonymizer skill on a fictional fixture.
 
 Builds a temp corpus that reproduces the real failure modes (inflection, homonyms,
-planted artifacts, structured data), runs the three scripts against it and asserts
-the expected behaviour. Exits non-zero on any failure.
+planted artifacts, structured data), runs the scripts against it and asserts the
+expected behaviour. Exits non-zero on any failure.
 
 Usage:
     python tests/run_fixture_test.py
@@ -86,11 +86,10 @@ def check(name, ok, detail=""):
 
 
 def run(script, *args):
-    proc = subprocess.run(
+    return subprocess.run(
         [sys.executable, str(SCRIPTS / script), *args],
         capture_output=True, text=True, encoding="utf-8", env=ENV, cwd=str(REPO),
     )
-    return proc
 
 
 def main():
@@ -171,8 +170,8 @@ def main():
         check("verify exits non-zero while artifacts remain", p.returncode == 1)
 
         # 5. verify on the whole tree flags the deanonymization keys
-        p = run("verify.py", str(tmp), "--terms", "Ромашка,Зареченск",
-                "--allowlist", str(allow_path), "--json", str(tmp / "verify-all.json"))
+        run("verify.py", str(tmp), "--terms", "Ромашка,Зареченск",
+            "--allowlist", str(allow_path), "--json", str(tmp / "verify-all.json"))
         va = json.loads((tmp / "verify-all.json").read_text(encoding="utf-8"))
         check("mapping flagged as a key", any("mapping.json" in m for m in va["mapping_files"]))
         check("backup dir flagged as a key", bool(va["backup_dirs"]))
